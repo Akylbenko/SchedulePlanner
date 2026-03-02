@@ -14,12 +14,29 @@ namespace SchedulePlanner.Core.Services
             _lessons = lessons;
         }
 
-        public IReadOnlyList<Lesson> GetAll() => _lessons;
+        public List<Lesson> Filter(DayOfWeek? day, string query)
+        {
+            IEnumerable<Lesson> q = _lessons;
+
+            if (day != null)
+                q = q.Where(x => x.Day == day.Value);
+
+            if (!string.IsNullOrWhiteSpace(query))
+            {
+                string s = query.ToLower();
+                q = q.Where(x =>
+                    x.Subject.ToLower().Contains(s) ||
+                    x.Teacher.ToLower().Contains(s) ||
+                    x.Group.ToLower().Contains(s));
+            }
+
+            return q.OrderBy(x => x.Day).ThenBy(x => x.Start).ToList();
+        }
 
         public void Add(Lesson lesson)
         {
             lesson.Validate();
-            EnsureNoConflict(lesson, ignoreId: null);
+            EnsureNoConflict(lesson, null);
             _lessons.Add(lesson);
         }
 
@@ -27,11 +44,8 @@ namespace SchedulePlanner.Core.Services
         {
             lesson.Validate();
 
-            var existing = _lessons.FirstOrDefault(x => x.Id == lesson.Id);
-            if (existing == null)
-                throw new InvalidOperationException("Пара не найдена.");
-
-            EnsureNoConflict(lesson, ignoreId: lesson.Id);
+            var existing = _lessons.First(x => x.Id == lesson.Id);
+            EnsureNoConflict(lesson, lesson.Id);
 
             existing.Day = lesson.Day;
             existing.Start = lesson.Start;
@@ -45,48 +59,22 @@ namespace SchedulePlanner.Core.Services
 
         public void Remove(Guid id)
         {
-            var existing = _lessons.FirstOrDefault(x => x.Id == id);
-            if (existing != null)
-                _lessons.Remove(existing);
-        }
-
-        public List<Lesson> Filter(DayOfWeek? day, string query)
-        {
-            IEnumerable<Lesson> q = _lessons;
-
-            if (day != null)
-                q = q.Where(x => x.Day == day.Value);
-
-            if (!string.IsNullOrWhiteSpace(query))
-            {
-                string s = query.Trim().ToLowerInvariant();
-                q = q.Where(x =>
-                    x.Subject.ToLowerInvariant().Contains(s) ||
-                    x.Teacher.ToLowerInvariant().Contains(s) ||
-                    x.Room.ToLowerInvariant().Contains(s) ||
-                    x.Group.ToLowerInvariant().Contains(s));
-            }
-
-            return q.OrderBy(x => x.Day).ThenBy(x => x.Start).ToList();
+            _lessons.RemoveAll(x => x.Id == id);
         }
 
         private void EnsureNoConflict(Lesson lesson, Guid? ignoreId)
         {
             foreach (var other in _lessons)
             {
-                if (ignoreId != null && other.Id == ignoreId.Value)
+                if (ignoreId != null && other.Id == ignoreId)
                     continue;
 
                 if (!string.Equals(other.Group, lesson.Group, StringComparison.OrdinalIgnoreCase))
                     continue;
 
                 if (lesson.Overlaps(other))
-                {
                     throw new InvalidOperationException(
-                        $"Conflict for group '{lesson.Group}' on {lesson.Day}: " +
-                        $"{lesson.Start:hh\\:mm}-{lesson.End:hh\\:mm} overlaps " +
-                        $"{other.Start:hh\\:mm}-{other.End:hh\\:mm} ({other.Subject}).");
-                }
+                        $"Конфликт расписания для группы {lesson.Group}.");
             }
         }
     }

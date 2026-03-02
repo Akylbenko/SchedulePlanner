@@ -1,4 +1,5 @@
 ﻿using System;
+using System.Collections.Generic;
 using System.Globalization;
 using System.Windows.Forms;
 using SchedulePlanner.Core.Models;
@@ -20,6 +21,24 @@ namespace SchedulePlanner.UI
 
         public Lesson Result { get; private set; }
 
+        private static readonly Dictionary<string, DayOfWeek> DayMap = new()
+        {
+            ["Понедельник"] = DayOfWeek.Monday,
+            ["Вторник"] = DayOfWeek.Tuesday,
+            ["Среда"] = DayOfWeek.Wednesday,
+            ["Четверг"] = DayOfWeek.Thursday,
+            ["Пятница"] = DayOfWeek.Friday,
+            ["Суббота"] = DayOfWeek.Saturday,
+            ["Воскресенье"] = DayOfWeek.Sunday
+        };
+
+        private static readonly Dictionary<string, LessonType> TypeMap = new()
+        {
+            ["Лекция"] = LessonType.Lecture,
+            ["Практика"] = LessonType.Practice,
+            ["Лабораторная"] = LessonType.Lab
+        };
+
         public LessonEditForm(string title, Lesson? existing = null)
         {
             Text = title;
@@ -27,10 +46,16 @@ namespace SchedulePlanner.UI
             FormBorderStyle = FormBorderStyle.FixedDialog;
             MaximizeBox = false;
             MinimizeBox = false;
-            Width = 420;
+            Width = 430;
             Height = 420;
 
-            Result = existing != null ? Clone(existing) : new Lesson();
+            Result = existing != null ? Clone(existing) : new Lesson
+            {
+                Day = DayOfWeek.Monday,
+                Type = LessonType.Lecture,
+                Start = new TimeSpan(9, 0, 0),
+                End = new TimeSpan(10, 30, 0)
+            };
 
             BuildUi();
             LoadFromResult();
@@ -42,61 +67,63 @@ namespace SchedulePlanner.UI
             {
                 Dock = DockStyle.Fill,
                 ColumnCount = 2,
-                RowCount = 9,
                 Padding = new Padding(10),
                 AutoSize = true
             };
-            table.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 35));
-            table.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 65));
+
+            table.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 38));
+            table.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 62));
 
             _cbDay.DropDownStyle = ComboBoxStyle.DropDownList;
-            _cbDay.Items.AddRange(Enum.GetNames(typeof(DayOfWeek)));
+            _cbDay.Items.AddRange(new[]
+            {
+                "Понедельник","Вторник","Среда","Четверг","Пятница","Суббота","Воскресенье"
+            });
 
             _cbType.DropDownStyle = ComboBoxStyle.DropDownList;
-            _cbType.Items.AddRange(Enum.GetNames(typeof(LessonType)));
+            _cbType.Items.AddRange(new[] { "Лекция", "Практика", "Лабораторная" });
 
-            _tbStart.PlaceholderText = "HH:mm";
-            _tbEnd.PlaceholderText = "HH:mm";
+            _tbStart.PlaceholderText = "ЧЧ:ММ (например 09:00)";
+            _tbEnd.PlaceholderText = "ЧЧ:ММ (например 10:30)";
 
-            AddRow(table, "День:", _cbDay);
-            AddRow(table, "Тип:", _cbType);
-            AddRow(table, "Начало:", _tbStart);
-            AddRow(table, "Конец:", _tbEnd);
+            AddRow(table, "День недели:", _cbDay);
+            AddRow(table, "Тип занятия:", _cbType);
+            AddRow(table, "Время начала:", _tbStart);
+            AddRow(table, "Время окончания:", _tbEnd);
             AddRow(table, "Предмет:", _tbSubject);
             AddRow(table, "Преподаватель:", _tbTeacher);
             AddRow(table, "Аудитория:", _tbRoom);
             AddRow(table, "Группа:", _tbGroup);
 
-            var panelButtons = new FlowLayoutPanel
+            var buttons = new FlowLayoutPanel
             {
                 Dock = DockStyle.Fill,
                 FlowDirection = FlowDirection.RightToLeft,
                 AutoSize = true
             };
 
-            _btnOk.Text = "Применить";
-            _btnOk.Width = 90;
+            _btnOk.Text = "Сохранить";
+            _btnOk.Width = 110;
             _btnOk.Click += (_, __) => OnOk();
 
-            _btnCancel.Text = "Отменить";
-            _btnCancel.Width = 90;
+            _btnCancel.Text = "Отмена";
+            _btnCancel.Width = 110;
             _btnCancel.Click += (_, __) => { DialogResult = DialogResult.Cancel; Close(); };
 
-            panelButtons.Controls.Add(_btnOk);
-            panelButtons.Controls.Add(_btnCancel);
+            buttons.Controls.Add(_btnOk);
+            buttons.Controls.Add(_btnCancel);
 
-            table.Controls.Add(panelButtons, 0, table.RowCount - 1);
-            table.SetColumnSpan(panelButtons, 2);
+            table.RowStyles.Add(new RowStyle(SizeType.Absolute, 40));
+            table.Controls.Add(buttons, 0, table.RowCount);
+            table.SetColumnSpan(buttons, 2);
 
             Controls.Add(table);
         }
 
         private static void AddRow(TableLayoutPanel table, string labelText, Control input)
         {
-            int row = table.Controls.Count / 2;
-
-            if (row >= table.RowCount - 1)
-                table.RowCount++;
+            int row = table.RowCount;
+            table.RowCount++;
 
             table.RowStyles.Add(new RowStyle(SizeType.Absolute, 32));
 
@@ -115,8 +142,8 @@ namespace SchedulePlanner.UI
 
         private void LoadFromResult()
         {
-            _cbDay.SelectedItem = Result.Day.ToString();
-            _cbType.SelectedItem = Result.Type.ToString();
+            _cbDay.SelectedItem = DayToRu(Result.Day);
+            _cbType.SelectedItem = TypeToRu(Result.Type);
 
             _tbStart.Text = Result.Start.ToString(@"hh\:mm");
             _tbEnd.Text = Result.End.ToString(@"hh\:mm");
@@ -139,14 +166,22 @@ namespace SchedulePlanner.UI
             }
             catch (Exception ex)
             {
-                MessageBox.Show(ex.Message, "Validation error", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                MessageBox.Show(ex.Message, "Ошибка ввода",
+                    MessageBoxButtons.OK, MessageBoxIcon.Warning);
             }
         }
 
         private void ApplyToResult()
         {
-            Result.Day = Enum.Parse<DayOfWeek>(_cbDay.SelectedItem?.ToString() ?? DayOfWeek.Monday.ToString());
-            Result.Type = Enum.Parse<LessonType>(_cbType.SelectedItem?.ToString() ?? LessonType.Lecture.ToString());
+            var dayStr = _cbDay.SelectedItem?.ToString();
+            if (dayStr == null || !DayMap.ContainsKey(dayStr))
+                throw new ArgumentException("Выберите день недели.");
+            Result.Day = DayMap[dayStr];
+
+            var typeStr = _cbType.SelectedItem?.ToString();
+            if (typeStr == null || !TypeMap.ContainsKey(typeStr))
+                throw new ArgumentException("Выберите тип занятия.");
+            Result.Type = TypeMap[typeStr];
 
             Result.Start = ParseTime(_tbStart.Text);
             Result.End = ParseTime(_tbEnd.Text);
@@ -162,8 +197,28 @@ namespace SchedulePlanner.UI
             if (TimeSpan.TryParseExact(text.Trim(), @"hh\:mm", CultureInfo.InvariantCulture, out var t))
                 return t;
 
-            throw new ArgumentException("Time must be in HH:mm format (e.g. 09:30).");
+            throw new ArgumentException("Время нужно вводить в формате ЧЧ:ММ (например 09:30).");
         }
+
+        private static string DayToRu(DayOfWeek day) => day switch
+        {
+            DayOfWeek.Monday => "Понедельник",
+            DayOfWeek.Tuesday => "Вторник",
+            DayOfWeek.Wednesday => "Среда",
+            DayOfWeek.Thursday => "Четверг",
+            DayOfWeek.Friday => "Пятница",
+            DayOfWeek.Saturday => "Суббота",
+            DayOfWeek.Sunday => "Воскресенье",
+            _ => day.ToString()
+        };
+
+        private static string TypeToRu(LessonType t) => t switch
+        {
+            LessonType.Lecture => "Лекция",
+            LessonType.Practice => "Практика",
+            LessonType.Lab => "Лабораторная",
+            _ => t.ToString()
+        };
 
         private static Lesson Clone(Lesson l) => new Lesson
         {
